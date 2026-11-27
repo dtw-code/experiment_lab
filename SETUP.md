@@ -37,16 +37,16 @@ Until a flag exists the app serves its built-in default and sends no exposure, s
 ## 4. Metrics (events sent with `track_event`)
 | Event name | Meaning | Aggregation | Good direction | Notes |
 |---|---|---|---|---|
-| `subscription_started` | upgraded to Pro | users who triggered (conversion) | up | |
-| `revenue` | order value, numeric event `value` | **sum** (or average) of value per user | up | send by the same users as above |
-| `lesson_started` | opened a lesson | users who triggered | up | denominator-style / secondary |
-| `lesson_completed` | finished (value = minutes) | users who triggered | up | |
-| `quiz_passed` | passed quiz | users who triggered | up | |
-| `quiz_abandoned` | gave up | users who triggered | **down** (guardrail) | |
-| `onboarding_completed` | finished onboarding | users who triggered | up | |
-| `onboarding_skipped` | skipped onboarding | users who triggered | **down** (guardrail) | |
-| `daily_return` | came back next day | users who triggered | up | |
-| `reminder_opt_out` | turned reminders off | users who triggered | **down** (guardrail) | |
+| `subscription_started` | upgraded to Pro | Occurrence | up | |
+| `revenue` | order value, numeric event `value` | **Mean** (average order value; Sum also works) | up | send by the same users as above |
+| `lesson_started` | opened a lesson | Occurrence | up | denominator-style / secondary |
+| `lesson_completed` | finished (value = minutes) | Occurrence | up | |
+| `quiz_passed` | passed quiz | Occurrence | up | |
+| `quiz_abandoned` | gave up | Occurrence | **down** (guardrail) | |
+| `onboarding_completed` | finished onboarding | Occurrence | up | |
+| `onboarding_skipped` | skipped onboarding | Occurrence | **down** (guardrail) | |
+| `daily_return` | came back next day | Occurrence | up | |
+| `reminder_opt_out` | turned reminders off | Occurrence | **down** (guardrail) | |
 
 ## 5. Experiments
 | # | Experiment (flag) | Hypothesis | Primary | Secondary | Guardrail | With default knobs | Guardian scenario |

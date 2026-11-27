@@ -1,0 +1,9 @@
+# Per-repo settings for `guardian cleanup` (python pack). Read from INSIDE this repo.
+sdk_calls: [experiment, flag, get_experiment_flag, get_identity_flags]
+exclude: ["flagsmith.json", "**/*.lock"]
+keep_patterns: ["track(", "emit("]
+window_lines: 40
+max_changed_lines: 80
+commands:
+  lint: "{python} -m compileall -q ."
+  test: "{python} -m pytest -q -p no:cacheprovider"

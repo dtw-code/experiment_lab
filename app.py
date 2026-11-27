@@ -153,7 +153,7 @@ def pricing():
     st.subheader("Go Pro")
     tiers = {
         "monthly_first": [("Monthly", 9), ("Annual", 79)],
-        "annual_first": [("Annual (save 27%)", 79), ("Monthly", 9)],
+        "annual_first": [("Annual", 79), ("Monthly", 9)],
         "three_tier": [("Basic", 5), ("Pro", 9), ("Team", 24)],
     }.get(str(layout), [("Monthly", 9), ("Annual", 79)])
     for name, price in tiers:

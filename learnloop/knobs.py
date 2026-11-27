@@ -17,13 +17,13 @@ GLOBAL_LIFT = 1.0          # multiplies every positive metric probability (1.0 =
 GUARDRAIL_FACTOR = 1.0     # multiplies every guardrail probability (reminder_opt_out, quiz_abandoned, onboarding_skipped)
 
 # Chance a simulated user reaches the page hosting an experiment (exposure is only recorded on that page).
-PAGE_VISIT_RATE = {"home": 1.0, "pricing": 0.6, "lesson": 0.8, "quiz": 0.7, "onboarding": 1.0}
+PAGE_VISIT_RATE = {"home": 1.0, "pricing": 0.6, "lesson": 0.8, "quiz": 0.7, "onboarding": 1.0, "help": 0.5}
 
 # Share of simulated users who are "new learners" (the onboarding experiment only exposes these).
 NEW_LEARNER_SHARE = 0.4
 
 # Metrics where LOWER is better. Used by the simulator only to apply GUARDRAIL_FACTOR.
-GUARDRAIL_METRICS = {"quiz_abandoned", "onboarding_skipped", "reminder_opt_out"}
+GUARDRAIL_METRICS = {"quiz_abandoned", "onboarding_skipped", "reminder_opt_out", "support_ticket_opened"}
 
 EXPERIMENTS = {
     # E1 pricing_layout (string, 3 arms). Primary: subscription_started. Secondary: revenue (numeric event value).
@@ -55,6 +55,12 @@ EXPERIMENTS = {
         "none":   {"daily_return": 0.30, "reminder_opt_out": 0.00},
         "gentle": {"daily_return": 0.36, "reminder_opt_out": 0.03},
         "urgent": {"daily_return": 0.44, "reminder_opt_out": 0.14},
+    },
+    # E6 help_widget (Lesson page help area). Primary: support_ticket_opened - LOWER IS BETTER.
+    "help_widget": {
+        "link":       {"support_ticket_opened": 0.20},   # control: plain "contact support" link
+        "inline_faq": {"support_ticket_opened": 0.12},   # inline FAQ deflects tickets (the winner = the lower number)
+        "chat_hint":  {"support_ticket_opened": 0.21},   # no real change
     },
 }
 

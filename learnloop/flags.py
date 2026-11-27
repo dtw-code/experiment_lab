@@ -23,6 +23,7 @@ EXPERIMENT_FLAGS = {
     "quiz_timer": "none",
     "onboarding_flow": "classic",
     "streak_reminder": "none",
+    "help_widget": "link",
 }
 # Plain flags: kill switch, segment/identity overrides, remote config, staged rollout, stale (cleanup) flags.
 PLAIN_FLAGS = {

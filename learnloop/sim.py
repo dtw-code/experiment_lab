@@ -71,6 +71,11 @@ def simulate_user(rng: random.Random, emit=flags.track, expose=flags.experiment,
         fire("quiz_timer", v, "quiz_passed")
         fire("quiz_timer", v, "quiz_abandoned")
 
+    if hit("help"):  # E6 help_widget (lower is better)
+        _, v = expose("help_widget", uid, traits)
+        seen.append(("help_widget", str(v)))
+        fire("help_widget", str(v), "support_ticket_opened")
+
     if hit("pricing"):  # E1 pricing_layout
         _, v = expose("pricing_layout", uid, traits)
         seen.append(("pricing_layout", v))

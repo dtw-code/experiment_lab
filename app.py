@@ -114,6 +114,16 @@ def lesson():
         once("lesson_started")
     if st.button("Finish lesson"):
         once("lesson_completed", cfg["minutes"])
+    # E6 help_widget - the metric where LOWER is better
+    _, help_arm = exp("help_widget")
+    st.divider()
+    if help_arm == "inline_faq":
+        with st.expander("Quick answers"):
+            st.write("Lists are ordered, mutable collections. Use `append` to add items.")
+    elif help_arm == "chat_hint":
+        st.caption("💡 Stuck? Try rereading card 3.")
+    if st.button("Contact support"):
+        once("support_ticket_opened")
     if flags.flag("ai_tutor", ss.uid, traits)[1] == "on":  # staged rollout, not an experiment
         st.button("🤖 Ask the AI tutor")
 

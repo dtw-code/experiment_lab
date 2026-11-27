@@ -5,4 +5,3 @@ Setup values for the Flagsmith console: `SETUP.md`. Bias the results: `learnloop
     py -m pip install -r requirements.txt
     py -m streamlit run app.py
     py -m learnloop.sim --users 600
-    py -m pytest -q

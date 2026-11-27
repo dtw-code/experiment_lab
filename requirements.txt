@@ -1,3 +1,2 @@
 streamlit>=1.40
 flagsmith>=6.7.0
-pytest

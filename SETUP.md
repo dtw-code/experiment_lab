@@ -33,6 +33,7 @@ Until a flag exists the app serves its built-in default and sends no exposure, s
 | `quiz_timer` | `none` | `60`, `30` | 34 / 33 / 33 | numeric as string |
 | `onboarding_flow` | `classic` | `checklist` | 50 / 50 | string; audience = segment `new_learners` if the experiment lets you pick one (the app only ever exposes new learners anyway) |
 | `streak_reminder` | `none` | `gentle`, `urgent` | 34 / 33 / 33 | string copy test |
+| `help_widget` | `link` | `inline_faq`, `chat_hint` | 34 / 33 / 33 | string; the **lower-is-better** experiment |
 
 ## 4. Metrics (events sent with `track_event`)
 | Event name | Meaning | Aggregation | Good direction | Notes |
@@ -47,6 +48,7 @@ Until a flag exists the app serves its built-in default and sends no exposure, s
 | `onboarding_skipped` | skipped onboarding | Occurrence | **down** (guardrail) | |
 | `daily_return` | came back next day | Occurrence | up | |
 | `reminder_opt_out` | turned reminders off | Occurrence | **down** (guardrail) | |
+| `support_ticket_opened` | clicked "Contact support" | Occurrence | **down** (primary for `help_widget`) | set direction to "lower is better" |
 
 ## 5. Experiments
 | # | Experiment (flag) | Hypothesis | Primary | Secondary | Guardrail | With default knobs | Guardian scenario |
@@ -56,6 +58,11 @@ Until a flag exists the app serves its built-in default and sends no exposure, s
 | 3 | `quiz_timer` | A timer raises pass rate | `quiz_passed` | - | `quiz_abandoned` | `60` ties, `30` is worse on both | losing arm, harmful variant -> rollback |
 | 4 | `onboarding_flow` | Checklist beats the classic tour | `onboarding_completed` | - | `onboarding_skipped` | `checklist` wins, fewer skips | segment-scoped experiment, small N (~40% of users) |
 | 5 | `streak_reminder` | Urgent copy brings users back | `daily_return` | - | `reminder_opt_out` | `urgent` wins primary but breaches the guardrail | win-with-guardrail-breach -> must NOT auto-ship |
+| 6 | `help_widget` | An inline FAQ means fewer support tickets | `support_ticket_opened` (**lower is better**) | - | - | `inline_faq` wins by being LOWER (0.12 vs 0.20); `chat_hint` ties | direction handling: a drop must be read as a win |
+
+**The console takes one primary metric per experiment**, so attach only the Primary column. Events from the other
+columns are still sent by the app (harmless); if the console lets you add secondary/guardrail metrics, add them too.
+Experiment 3 (`quiz_timer`) overlaps with 2 on the lesson/quiz area and can be skipped to stay at five.
 
 Suggested run: 1 clean, 3 plain from the start, plus run #5 and #3 longest. For a sample-size check run the
 simulator with `--users 150` (underpowered) then `--users 2000`.
@@ -72,6 +79,7 @@ Events can lag a few minutes; recompute the experiment results in the console af
 * Make `three_tier` the winner: set its `subscription_started` to `0.16`.
 * A/A test (no true difference): make every arm of one experiment identical.
 * Bad day for everything: `GLOBAL_LIFT = 0.5`. Raise guardrails: `GUARDRAIL_FACTOR = 2.0`.
+* Make `inline_faq` lose: set its `support_ticket_opened` to `0.25` (higher = worse for this metric).
 * Fewer users (underpowered): `SIM_USERS = 150`.
 * Variant keys in `knobs.py` must equal the flag values above (`lesson_length` arms are `10min` / `5min` = the JSON `minutes`).
 

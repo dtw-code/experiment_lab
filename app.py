@@ -1,15 +1,19 @@
-"""LearnLoop - a tiny micro-learning app used to exercise the experiment guardian.
+"""LearnLoop - a micro-learning app that exists to exercise the experiment guardian.
 
-Run:  py -m streamlit run app.py
-Five pages, five experiments, six plain flags. See SETUP.md for exactly what to create in the Flagsmith console.
-Tweak who wins in learnloop/knobs.py (simulator) - the UI buttons below are for hand-testing a single user.
+    py -m streamlit run app.py
+
+Four learner pages plus a simulator, five running experiments, six plain flags. What each experiment
+changes on screen and which verdict it is built to produce: EXPERIMENTS.md. What to create in the
+Flagsmith console: SETUP.md. Which arm wins: learnloop/knobs.py.
+
+The buttons here are for hand-testing one learner; `py -m learnloop.sim` produces the real traffic.
 """
 import random
 import uuid
 
 import streamlit as st
 
-from learnloop import flags, knobs, sim
+from learnloop import experiments, flags, knobs, sim
 
 st.set_page_config(page_title="LearnLoop", page_icon="🔁", layout="centered")
 
@@ -34,29 +38,34 @@ with st.sidebar:
 traits = {"plan": plan, "country": country, "days_since_signup": int(days), "streak_days": int(streak)}
 
 
-def exp(name: str):
-    """Experiment flag, exposure recorded at most once per user per session."""
+def arm(name: str):
+    """This learner's arm for an experiment flag; the exposure is recorded once per session."""
     if name not in ss.resolved:
-        ss.resolved[name] = flags.experiment(name, ss.uid, traits)
+        ss.resolved[name] = flags.read_experiment_flag(name, ss.uid, traits)[1]
     return ss.resolved[name]
 
 
-def once(event: str, value=None) -> None:
-    """Track an event once per user per session so button mashing cannot inflate a metric."""
-    if event not in ss.fired:
-        ss.fired.add(event)
-        flags.track(event, ss.uid, value, traits)
-        st.toast(f"tracked `{event}`" + (f" = {value}" if value is not None else ""))
+def first_time(event: str) -> bool:
+    """True once per session per event, so button mashing cannot inflate a metric.
+
+    Every conversion below is then a literal `flags.track_event(` call, which is what `cleanup.yaml`
+    protects with `keep_patterns`: a cleanup may delete a flag's branch but never the line that
+    records the metric.
+    """
+    if event in ss.fired:
+        return False
+    ss.fired.add(event)
+    st.toast(f"tracked `{event}`")
+    return True
 
 
 # ---------------------------------------------------------------- global flags (kill switch, overrides)
-on_maint, _ = flags.flag("maintenance_mode", ss.uid, traits)
-if on_maint:
+if flags.read_flag("maintenance_mode", ss.uid, traits)[0]:
     st.error("🛠️ LearnLoop is down for maintenance. (flag `maintenance_mode` is ON)")
     st.stop()
 
 with st.sidebar:
-    if flags.flag("support_chat", ss.uid, traits)[0]:
+    if flags.read_flag("support_chat", ss.uid, traits)[0]:
         st.success("💬 Priority support chat is on for you (flag `support_chat`)")
 
 st.title("🔁 LearnLoop")
@@ -64,116 +73,90 @@ st.title("🔁 LearnLoop")
 
 # ---------------------------------------------------------------- pages
 def home():
-    goal = flags.parse_int(flags.flag("daily_goal_xp", ss.uid, traits)[1], 20)
+    goal = flags.parse_int(flags.read_flag("daily_goal_xp", ss.uid, traits)[1], 20)
     st.metric("Daily goal (flag `daily_goal_xp`)", f"{goal} XP")
 
-    # E5 streak_reminder - copy test with a guardrail
-    _, reminder = exp("streak_reminder")
-    copy = {
-        "gentle": "🌱 Nice streak! A 5-minute lesson keeps it growing.",
-        "urgent": f"🔥 Your {streak}-day streak ENDS TONIGHT. Study now or lose it!",
-    }.get(str(reminder))
+    # E5 streak_reminder -> INCONCLUSIVE. Two goal metrics, daily_return and streak_continued.
+    copy = experiments.streak_reminder_copy(arm("streak_reminder"), int(streak))
+    st.subheader("Today")
     if copy:
-        st.warning(copy)
-        c1, c2 = st.columns(2)
-        if c1.button("I'll come back tomorrow"):
-            once("daily_return")
-        if c2.button("Turn reminders off"):
-            once("reminder_opt_out")
+        st.warning(f"🌱 {copy}")
+    c1, c2 = st.columns(2)
+    if c1.button("I'll come back tomorrow") and first_time("daily_return"):
+        flags.track_event("daily_return", ss.uid, None, traits)
+    if c2.button("Keep the streak alive") and first_time("streak_continued"):
+        flags.track_event("streak_continued", ss.uid, None, traits)
 
-    # E4 onboarding_flow - only exposed to new learners (segment: new_learners)
-    if int(days) <= 7:
-        _, flow = exp("onboarding_flow")
-        st.subheader("Welcome! 👋")
-        if flow == "checklist":
-            st.checkbox("Pick a topic")
-            st.checkbox("Finish your first lesson")
-            st.checkbox("Set a daily goal")
-        else:
-            st.info("Classic tour: Step 1 of 3 - choose a topic from the menu.")
-        c1, c2 = st.columns(2)
-        if c1.button("Finish onboarding"):
-            once("onboarding_completed")
-        if c2.button("Skip onboarding"):
-            once("onboarding_skipped")
-
-    # Stale flag on purpose: fully rolled out long ago -> cleanup candidate for the guardian.
-    if flags.flag("legacy_leaderboard", ss.uid, traits)[0]:
+    # Stale flag on purpose: fully rolled out long ago, so `guardian cleanup` should offer to remove it.
+    if flags.read_flag("legacy_leaderboard", ss.uid, traits)[0]:
         st.subheader("🏆 Leaderboard")
         st.table({"Learner": ["ana", "bo", "chen"], "XP": [980, 940, 910]})
 
 
 def lesson():
-    # E2 lesson_length - JSON remote config
-    _, raw = exp("lesson_length")
-    cfg = flags.parse_lesson_length(raw)
-    st.subheader(f"Lesson: Python lists ({cfg['minutes']} min, {cfg['cards']} cards)")
-    for i in range(cfg["cards"]):
-        st.caption(f"Card {i + 1}/{cfg['cards']}")
-    if st.button("Start lesson"):
-        once("lesson_started")
+    st.subheader("Lesson: Python lists (10 min, 8 cards)")
+    for i in range(8):
+        st.caption(f"Card {i + 1}/8")
+
+    # E4 lesson_loading -> SEVERE_HARM. Primary metric lesson_load_ms is the MEAN of a numeric value.
+    load_arm = arm("lesson_loading")
+    st.caption(f"Content loading: {load_arm}")
+    load_ms = experiments.lesson_loading_ms(load_arm)
+    if st.button("Start lesson") and first_time("lesson_load_ms"):
+        flags.track_event("lesson_load_ms", ss.uid, load_ms, traits)
     if st.button("Finish lesson"):
-        once("lesson_completed", cfg["minutes"])
-    # E6 help_widget - the metric where LOWER is better
-    _, help_arm = exp("help_widget")
+        st.success("Lesson finished.")
+
+    # E3 help_widget -> SYSTEMIC_FAILURE. The ticket rate breaches its ceiling on control too.
     st.divider()
-    if help_arm == "inline_faq":
-        with st.expander("Quick answers"):
-            st.write("Lists are ordered, mutable collections. Use `append` to add items.")
-    elif help_arm == "chat_hint":
-        st.caption("💡 Stuck? Try rereading card 3.")
-    if st.button("Contact support"):
-        once("support_ticket_opened")
-    if flags.flag("ai_tutor", ss.uid, traits)[1] == "on":  # staged rollout, not an experiment
+    hint = experiments.help_widget_hint(arm("help_widget"))
+    if hint:
+        st.caption(f"💡 {hint}")
+    if st.button("Contact support") and first_time("support_ticket_opened"):
+        flags.track_event("support_ticket_opened", ss.uid, None, traits)
+
+    if flags.read_flag("ai_tutor", ss.uid, traits)[1] == "on":   # staged rollout, not an experiment
         st.button("🤖 Ask the AI tutor")
 
 
 def quiz():
-    # E3 quiz_timer - numeric value-as-string
-    _, raw = exp("quiz_timer")
-    seconds = flags.parse_quiz_timer(raw)
+    # E2 quiz_timer -> HARMFUL_VARIANT. Primary metric quiz_passed.
+    seconds = experiments.quiz_timer_seconds(arm("quiz_timer"))
     st.subheader("Quiz: 3 questions")
     st.caption(f"⏱️ {seconds}s timer" if seconds else "Untimed")
-    if flags.flag("beta_exam_mode", ss.uid, traits)[0]:  # segment flag: pro_users
+
+    if flags.read_flag("beta_exam_mode", ss.uid, traits)[0]:     # segment flag: pro_users
         st.info("🧪 Exam mode (beta) is available to your plan.")
     st.radio("What does `len([1,2,3])` return?", ["2", "3", "4"], key="q1")
-    c1, c2 = st.columns(2)
-    if c1.button("Submit"):
+    if st.button("Submit"):
         if ss.q1 == "3":
-            once("quiz_passed")
+            if first_time("quiz_passed"):
+                flags.track_event("quiz_passed", ss.uid, None, traits)
         else:
             st.error("Not quite.")
-    if c2.button("Give up"):
-        once("quiz_abandoned")
 
 
 def pricing():
-    # E1 pricing_layout - 3-arm string; revenue is a numeric metric
-    _, layout = exp("pricing_layout")
+    # E1 pricing_layout -> WINNER. Primary metric subscription_started.
     st.subheader("Go Pro")
-    tiers = {
-        "monthly_first": [("Monthly", 9), ("Annual", 79)],
-        "annual_first": [("Annual", 79), ("Monthly", 9)],
-        "three_tier": [("Basic", 5), ("Pro", 9), ("Team", 24)],
-    }.get(str(layout), [("Monthly", 9), ("Annual", 79)])
-    for name, price in tiers:
-        if st.button(f"Subscribe - {name}: ${price}"):
-            once("subscription_started")
-            once("revenue", price)
+    for name, price in experiments.pricing_layout_tiers(arm("pricing_layout")):
+        if st.button(f"Subscribe - {name}: ${price}") and first_time("subscription_started"):
+            flags.track_event("subscription_started", ss.uid, None, traits)
 
 
 def simulator():
     st.subheader("Simulator")
-    st.caption("Uses learnloop/knobs.py. Opens many identities, so each run adds real events to your environment.")
-    n = st.number_input("Users", 10, 5000, knobs.SIM_USERS, step=50)
+    st.caption("Uses learnloop/knobs.py. Opens many identities, so each run adds real events to your "
+               "environment. The CLI (`py -m learnloop.sim`) is faster for large runs.")
+    n = st.number_input("Learners", 10, 20000, knobs.SIM_USERS, step=100)
     if st.button("Run simulation"):
         bar = st.progress(0)
         rng = random.Random(knobs.SEED)
         tally = {}
         for i in range(int(n)):
-            for e, arm in sim.simulate_user(rng):
-                tally.setdefault(e, {}).setdefault(arm, 0)
-                tally[e][arm] += 1
+            for flag, a in sim.simulate_learner(rng):
+                tally.setdefault(flag, {}).setdefault(a, 0)
+                tally[flag][a] += 1
             bar.progress((i + 1) / int(n))
         flags.flush()
         st.json(tally)
@@ -181,5 +164,5 @@ def simulator():
 
 {"Home": home, "Lesson": lesson, "Quiz": quiz, "Pricing": pricing, "Simulator": simulator}[page]()
 
-with st.expander("Debug: resolved experiments"):
-    st.json({k: list(v) for k, v in ss.resolved.items()})
+with st.expander("Debug: resolved experiment arms"):
+    st.json({k: str(v) for k, v in ss.resolved.items()})

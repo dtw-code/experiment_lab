@@ -1,8 +1,16 @@
-"""Headless user simulator. Same flag + metric calls as the web UI, driven by learnloop/knobs.py.
+"""Headless learner simulator: the traffic that drives the five experiments to a verdict.
 
-    py -m learnloop.sim                 # SIM_USERS users from knobs.py
-    py -m learnloop.sim --users 2000
-    py -m learnloop.sim --dry-run       # no Flagsmith calls: prints what each arm would be fed (sanity check of knobs)
+    py -m learnloop.sim                      # knobs.SIM_USERS learners
+    py -m learnloop.sim --users 3000
+    py -m learnloop.sim --dry-run            # no network: prints the arm split the knobs would feed
+    py -m learnloop.sim --workers 16         # parallel identities (default 12)
+
+Each learner costs ONE identity request: `flags.resolve_identity` resolves every flag in one call and
+`flags.arm_of` records the exposure per experiment, which is what the SDK's `get_experiment_flag`
+does internally. Conversion events are buffered and flushed in batches.
+
+Flagsmith computes experiment results from a warehouse, not from the request, so events take a few
+minutes to land. Recompute the experiment in the console, or run `guardian refresh <id>`, afterwards.
 """
 from __future__ import annotations
 
@@ -10,119 +18,123 @@ import argparse
 import random
 import uuid
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
-from . import flags, knobs
+from . import experiments, flags, knobs
 
 
 def make_traits(rng: random.Random) -> dict:
-    new = rng.random() < knobs.NEW_LEARNER_SHARE
     return {
         "plan": rng.choices(["free", "pro", "enterprise"], [70, 25, 5])[0],
         "country": rng.choice(["IN", "US", "UK", "DE"]),
-        "days_since_signup": rng.randint(0, 7) if new else rng.randint(8, 400),
+        "days_since_signup": rng.randint(0, 400),
         "streak_days": rng.choice([0, 1, 3, 7, 14, 30, 45]),
     }
 
 
-def _p(experiment: str, arm: str, metric: str) -> float:
-    p = knobs.outcome_table(experiment, arm).get(metric, 0.0)
-    if metric in knobs.GUARDRAIL_METRICS:
-        return min(1.0, p * knobs.GUARDRAIL_FACTOR)
-    return min(1.0, p * knobs.GLOBAL_LIFT)
-
-
-def simulate_user(rng: random.Random, emit=flags.track, expose=flags.experiment,
-                  plain=flags.flag) -> list[tuple[str, str]]:
-    """One user session. Returns [(experiment, arm)] exposures; emits metric events through `emit`."""
+def simulate_learner(rng: random.Random, *, resolve=flags.resolve_identity, arm_of=flags.arm_of,
+                     emit=flags.track_event) -> list[tuple[str, str]]:
+    """One learner session. Returns [(flag, arm)] exposures and emits that arm's metric events."""
     uid = f"sim-{uuid.uuid4()}"
     traits = make_traits(rng)
+    resolved = resolve(uid, traits)
     seen: list[tuple[str, str]] = []
 
-    def hit(page: str) -> bool:
+    def visit(page: str) -> bool:
         return rng.random() < knobs.PAGE_VISIT_RATE[page]
 
-    def fire(exp: str, arm: str, metric: str, value=None):
-        if rng.random() < _p(exp, arm, metric):
+    def fire(flag: str, arm: str, metric: str, value=None) -> None:
+        if rng.random() < knobs.probability(flag, arm, metric):
             emit(metric, uid, value, traits)
 
-    if hit("home"):  # E5 streak_reminder
-        _, v = expose("streak_reminder", uid, traits)
-        seen.append(("streak_reminder", v))
-        fire("streak_reminder", v, "daily_return")
-        fire("streak_reminder", v, "reminder_opt_out")
+    if visit("home"):                                       # E5 streak_reminder
+        arm = arm_of(resolved, "streak_reminder", uid, traits)
+        if arm is not None:
+            seen.append(("streak_reminder", str(arm)))
+            fire("streak_reminder", str(arm), "daily_return")
+            fire("streak_reminder", str(arm), "streak_continued")
 
-    if traits["days_since_signup"] <= 7 and hit("onboarding"):  # E4: new learners only
-        _, v = expose("onboarding_flow", uid, traits)
-        seen.append(("onboarding_flow", v))
-        fire("onboarding_flow", v, "onboarding_completed")
-        fire("onboarding_flow", v, "onboarding_skipped")
+    if visit("lesson"):                                     # E4 lesson_loading (the mean metric)
+        arm = arm_of(resolved, "lesson_loading", uid, traits)
+        if arm is not None:
+            seen.append(("lesson_loading", str(arm)))
+            emit("lesson_load_ms", uid, experiments.lesson_loading_ms(arm, rng), traits)
 
-    if hit("lesson"):  # E2 lesson_length
-        _, raw = expose("lesson_length", uid, traits)
-        arm = flags.lesson_arm(flags.parse_lesson_length(raw))
-        seen.append(("lesson_length", arm))
-        emit("lesson_started", uid, None, traits)
-        fire("lesson_length", arm, "lesson_completed", flags.parse_lesson_length(raw)["minutes"])
+    if visit("help"):                                       # E3 help_widget
+        arm = arm_of(resolved, "help_widget", uid, traits)
+        if arm is not None:
+            seen.append(("help_widget", str(arm)))
+            fire("help_widget", str(arm), "support_ticket_opened")
 
-    if hit("quiz"):  # E3 quiz_timer
-        _, v = expose("quiz_timer", uid, traits)
-        v = str(v)
-        seen.append(("quiz_timer", v))
-        fire("quiz_timer", v, "quiz_passed")
-        fire("quiz_timer", v, "quiz_abandoned")
+    if visit("quiz"):                                       # E2 quiz_timer
+        arm = arm_of(resolved, "quiz_timer", uid, traits)
+        if arm is not None:
+            seen.append(("quiz_timer", str(arm)))
+            fire("quiz_timer", str(arm), "quiz_passed")
 
-    if hit("help"):  # E6 help_widget (lower is better)
-        _, v = expose("help_widget", uid, traits)
-        seen.append(("help_widget", str(v)))
-        fire("help_widget", str(v), "support_ticket_opened")
+    if visit("pricing"):                                    # E1 pricing_layout
+        arm = arm_of(resolved, "pricing_layout", uid, traits)
+        if arm is not None:
+            seen.append(("pricing_layout", str(arm)))
+            fire("pricing_layout", str(arm), "subscription_started")
 
-    if hit("pricing"):  # E1 pricing_layout
-        _, v = expose("pricing_layout", uid, traits)
-        seen.append(("pricing_layout", v))
-        if rng.random() < _p("pricing_layout", v, "subscription_started"):
-            avg = knobs.outcome_table("pricing_layout", v)["revenue_avg"]
-            emit("subscription_started", uid, None, traits)
-            emit("revenue", uid, round(max(1.0, rng.gauss(avg, avg * 0.25)), 2), traits)
-
-    # Non-experiment flags are evaluated too so segments / overrides / kill switch show up in Flagsmith analytics.
-    for name in ("maintenance_mode", "beta_exam_mode", "support_chat", "daily_goal_xp", "ai_tutor", "legacy_leaderboard"):
-        plain(name, uid, traits)
     return seen
 
 
-def run(users: int, dry_run: bool = False) -> dict:
+def _fake_resolve(uid, traits=None):
+    return None
+
+
+def _even_split(rng: random.Random):
+    """Stand-in for Flagsmith that hands out arms 50/50, for --dry-run."""
+    def arm_of(resolved, name, uid, traits=None):
+        return rng.choice(list(knobs.EXPERIMENTS[name]))
+    return arm_of
+
+
+def run(users: int, dry_run: bool = False, workers: int = 12) -> dict:
     rng = random.Random(knobs.SEED)
     tally: dict[str, Counter] = defaultdict(Counter)
     if dry_run:
-        # Fake an even 3-way split so the knob table is exercised without network.
-        def fake_expose(name, uid, traits=None):
-            arms = list(knobs.EXPERIMENTS[name])
-            arm = rng.choice(arms)
-            if name == "lesson_length":
-                arm = '{"minutes": %s, "cards": 8}' % arm.removesuffix("min")
-            return True, arm
-        expose, emit, plain = fake_expose, (lambda *a, **k: None), (lambda *a, **k: None)
-    else:
-        expose, emit, plain = flags.experiment, flags.track, flags.flag
+        for _ in range(users):
+            for flag, arm in simulate_learner(rng, resolve=_fake_resolve, arm_of=_even_split(rng),
+                                              emit=lambda *a, **k: None):
+                tally[flag][arm] += 1
+        return {k: dict(v) for k, v in tally.items()}
 
-    for i in range(users):
-        for exp, arm in simulate_user(rng, emit=emit, expose=expose, plain=plain):
-            tally[exp][arm] += 1
-        if not dry_run and i % 100 == 99:
-            flags.flush()
-    if not dry_run:
-        flags.flush()
+    seeds = [random.Random(knobs.SEED + i) for i in range(users)]
+    done = 0
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for seen in pool.map(simulate_learner, seeds):
+            for flag, arm in seen:
+                tally[flag][arm] += 1
+            done += 1
+            if done % 250 == 0:
+                flags.flush()
+                print(f"  {done}/{users} learners", flush=True)
+    flags.flush()
     return {k: dict(v) for k, v in tally.items()}
 
 
-if __name__ == "__main__":
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--users", type=int, default=knobs.SIM_USERS)
     ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
+    ap.add_argument("--workers", type=int, default=12)
+    args = ap.parse_args(argv)
     if not args.dry_run and flags.client() is None:
-        raise SystemExit("No environment key: fill flagsmith.json or set FLAGSMITH_ENVIRONMENT_KEY.")
-    print(f"simulating {args.users} users (dry_run={args.dry_run}) ...")
-    for exp, arms in run(args.users, args.dry_run).items():
-        print(f"  {exp:16s} exposures per arm: {arms}")
-    print("done. Events can take a few minutes to appear in the console; hit Recompute on the experiment.")
+        print("No environment key: fill flagsmith.json or set FLAGSMITH_ENVIRONMENT_KEY.")
+        return 2
+    if args.users < knobs.MIN_USERS_FOR_VERDICTS and not args.dry_run:
+        print(f"note: {args.users} learners is below the {knobs.MIN_USERS_FOR_VERDICTS} the knobs are "
+              f"calibrated for; the HARMFUL_VARIANT margin may not reach significance.")
+    print(f"simulating {args.users} learners (dry_run={args.dry_run}, workers={args.workers}) ...")
+    for flag, arms in run(args.users, args.dry_run, args.workers).items():
+        print(f"  {flag:16s} exposures per arm: {dict(sorted(arms.items()))}")
+    print("done. Events land in the warehouse within a few minutes; recompute the experiment "
+          "in the console or run `guardian refresh <experiment id>`.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

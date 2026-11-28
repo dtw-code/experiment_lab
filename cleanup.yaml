@@ -1,0 +1,40 @@
+# cleanup.yaml - written by `guardian setup`, safe to edit by hand.
+# Read from INSIDE this repository by guardian/cleanup.py Config.load, so it travels with it.
+#   sdk_calls       how this app reads flags; a reference is found by these calls
+#   keep_patterns   conversion/analytics calls a cleanup must leave untouched
+#   window_lines    an edit must sit within this many lines of a flag reference
+#   commands        lint/build/test. A `test` command is REQUIRED: a cleanup is judged by
+#                   running it before and after the edits, and is refused without it.
+#
+# Every one of these takes the flag key as its first literal argument, which is what lets a cleanup
+# tell "this edit removes MY flag" from "this edit removes somebody else's":
+#   read_experiment_flag / read_flag   learnloop/flags.py, the only two Flagsmith reads
+#   get_experiment_flag                the SDK call read_experiment_flag wraps
+#   arm                                app.py, the per-session cache around read_experiment_flag
+#   arm_of                             learnloop/sim.py, the bulk path (2nd positional arg, see below)
+#   outcome_table                      learnloop/knobs.py, the simulator's arm table
+#   serve                              tests/conftest.py, the `arm` fixture
+#
+# `arm_of(resolved, "flag", ...)` takes the key SECOND, so the regex that extracts a key from a call
+# does not reach it - but listing it still makes the "this edit removes somebody else's flag" check
+# fire on the lines around it in sim.py, where two experiments sit seven lines apart.
+sdk_calls:
+- read_experiment_flag
+- read_flag
+- get_experiment_flag
+- arm
+- arm_of
+- outcome_table
+- serve
+exclude:
+- '**/*.lock'
+# Conversions are product metrics and outlive the experiment that measured them: `app.py` records
+# every one with a literal `flags.track_event(` call so that this guard has something to protect.
+# A cleanup may delete the arm branch above such a line, never the line.
+keep_patterns:
+- track_event(
+- trackEvent(
+window_lines: 15
+max_changed_lines: auto
+commands:
+  test: python -m pytest -q

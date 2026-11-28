@@ -37,4 +37,4 @@ keep_patterns:
 window_lines: 15
 max_changed_lines: auto
 commands:
-  test: py -m pytest -q
+  test: py -m pytest

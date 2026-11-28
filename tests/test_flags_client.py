@@ -52,9 +52,9 @@ def test_every_experiment_flag_defaults_to_its_control_arm():
         assert served.value == control, f"{name} must default to control, not a variant"
 
 
-def test_the_five_experiment_flags_are_the_ones_the_console_runs():
+def test_the_four_experiment_flags_are_the_ones_the_console_runs():
     assert set(flags.EXPERIMENT_FLAGS) == {
-        "pricing_layout", "quiz_timer", "help_widget", "lesson_loading", "streak_reminder"}
+        "pricing_layout", "help_widget", "lesson_loading", "streak_reminder"}
 
 
 def test_plain_flag_defaults_are_served_as_declared():
@@ -89,7 +89,7 @@ def test_resolving_an_identity_offline_yields_nothing():
 
 
 def test_arm_of_without_a_resolved_identity_serves_control():
-    assert flags.arm_of(None, "quiz_timer", "uid-1") == "none"
+    assert flags.arm_of(None, "pricing_layout", "uid-1") == "monthly_first"
 
 
 # ---- parse_int ---------------------------------------------------------------------------------

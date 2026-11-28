@@ -39,13 +39,6 @@ EXPERIMENTS = {
         "monthly_first": {"subscription_started": 0.20},   # control
         "annual_first": {"subscription_started": 0.32},    # the winner
     },
-    # E2 quiz_timer -> HARMFUL_VARIANT. Primary: quiz_passed (occurrence, up).
-    # 0.50 -> 0.43 is a 14% relative worsening: clearly worse, but under the 25% that would make it
-    # SEVERE_HARM. Do not widen this gap without re-reading severe_min_relative_worsening.
-    "quiz_timer": {
-        "none": {"quiz_passed": 0.50},                     # control
-        "30": {"quiz_passed": 0.43},                       # worse, but not severely
-    },
     # E3 help_widget -> SYSTEMIC_FAILURE. Primary: support_ticket_opened (occurrence, DOWN), declared
     # a failure_rate with abs_ceiling 0.05. Both arms sit near 0.21, so CONTROL breaches the ceiling
     # too and a rollback would not help - which is exactly what SYSTEMIC_FAILURE means.

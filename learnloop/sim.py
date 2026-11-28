@@ -66,12 +66,6 @@ def simulate_learner(rng: random.Random, *, resolve=flags.resolve_identity, arm_
             seen.append(("help_widget", str(arm)))
             fire("help_widget", str(arm), "support_ticket_opened")
 
-    if visit("quiz"):                                       # E2 quiz_timer
-        arm = arm_of(resolved, "quiz_timer", uid, traits)
-        if arm is not None:
-            seen.append(("quiz_timer", str(arm)))
-            fire("quiz_timer", str(arm), "quiz_passed")
-
     if visit("pricing"):                                    # E1 pricing_layout
         arm = arm_of(resolved, "pricing_layout", uid, traits)
         if arm is not None:

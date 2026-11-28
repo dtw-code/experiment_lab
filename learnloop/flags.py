@@ -29,7 +29,6 @@ ROOT = Path(__file__).resolve().parent.parent
 # arm, so an app with no network behaves exactly like the control group.
 EXPERIMENT_FLAGS = {
     "pricing_layout": "monthly_first",   # E1 -> WINNER
-    "quiz_timer": "none",                # E2 -> HARMFUL_VARIANT
     "help_widget": "link",               # E3 -> SYSTEMIC_FAILURE
     "lesson_loading": "eager",           # E4 -> SEVERE_HARM (the mean metric)
     "streak_reminder": "none",           # E5 -> INCONCLUSIVE

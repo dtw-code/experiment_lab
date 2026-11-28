@@ -120,10 +120,8 @@ def lesson():
 
 
 def quiz():
-    # E2 quiz_timer -> HARMFUL_VARIANT. Primary metric quiz_passed.
-    seconds = experiments.quiz_timer_seconds(arm("quiz_timer"))
     st.subheader("Quiz: 3 questions")
-    st.caption(f"⏱️ {seconds}s timer" if seconds else "Untimed")
+    st.caption("Untimed")
 
     if flags.read_flag("beta_exam_mode", ss.uid, traits)[0]:     # segment flag: pro_users
         st.info("🧪 Exam mode (beta) is available to your plan.")

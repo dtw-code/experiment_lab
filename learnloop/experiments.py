@@ -27,19 +27,6 @@ def pricing_layout_tiers(arm) -> list[tuple[str, int]]:
     return PRICING_LAYOUTS.get(str(arm), PRICING_LAYOUTS["monthly_first"])
 
 
-# --- E2 quiz_timer -- HARMFUL_VARIANT --------------------------------------------------------------
-# Control `none` is untimed; `30` puts a 30-second countdown on every question.
-# Conversion event: quiz_passed (occurrence, higher is better).
-
-def quiz_timer_seconds(arm) -> int | None:
-    """Seconds on the clock, or None for untimed. Accepts 'none', '', '30', 30."""
-    try:
-        seconds = int(str(arm).strip())
-    except (TypeError, ValueError):
-        return None
-    return seconds if seconds > 0 else None
-
-
 # --- E3 help_widget -- SYSTEMIC_FAILURE ------------------------------------------------------------
 # Control `link` is a plain "Contact support" link; `chat_hint` adds a nudge to reread the lesson.
 # Conversion event: support_ticket_opened (occurrence, LOWER is better, and it has an absolute

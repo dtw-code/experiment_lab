@@ -37,4 +37,10 @@ keep_patterns:
 window_lines: 15
 max_changed_lines: auto
 commands:
-  test: python -m pytest -q
+  # `python` on this machine resolves to the MSYS64 interpreter, which has no pytest, streamlit or
+  # flagsmith installed - a cleanup's baseline check then fails with `no_tests` (exit: "No module
+  # named pytest"), even though the suite is green. `py` is the launcher this app's own README and
+  # SETUP.md tell a person to use, and it resolves to the Python that `requirements.txt` was
+  # installed into. Checked live: `py -m pytest -q` passes the full suite from inside a cleanup
+  # worktree; `python -m pytest -q` does not.
+  test: py -m pytest -q

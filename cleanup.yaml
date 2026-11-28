@@ -37,10 +37,14 @@ keep_patterns:
 window_lines: 15
 max_changed_lines: auto
 commands:
-  # `python` on this machine resolves to the MSYS64 interpreter, which has no pytest, streamlit or
-  # flagsmith installed - a cleanup's baseline check then fails with `no_tests` (exit: "No module
-  # named pytest"), even though the suite is green. `py` is the launcher this app's own README and
-  # SETUP.md tell a person to use, and it resolves to the Python that `requirements.txt` was
-  # installed into. Checked live: `py -m pytest -q` passes the full suite from inside a cleanup
-  # worktree; `python -m pytest -q` does not.
-  test: py -m pytest -q
+  # Two separate bugs stacked here, both confirmed live inside an actual cleanup worktree:
+  #   1. `python` on this machine resolves to the MSYS64 interpreter, which has no pytest,
+  #      streamlit or flagsmith installed ("No module named pytest"), not the one
+  #      `requirements.txt` was installed into. `py` is the launcher this app's own README and
+  #      SETUP.md already use everywhere else, and it resolves correctly.
+  #   2. This repo's `pytest.ini` already sets `addopts = -ra -q`. A command that ALSO passes
+  #      `-q` stacks to `-qq` ("very quiet"), which pytest suppresses the final `N passed in Xs`
+  #      summary line for entirely - rc is still 0, but guardian/cleanup.py's `run_checks` parses
+  #      that summary line to count tests, reads zero, and the baseline refuses with `no_tests`
+  #      even though every test passed. Do not add `-q` here; pytest.ini already supplies it.
+  test: py -m pytest
